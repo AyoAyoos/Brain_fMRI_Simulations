@@ -17,12 +17,20 @@ A high-performance, GPU-accelerated visualization system for simulating Blood-Ox
 ## Demo
 
 The simulation creates a "Glass Brain" where:
+
 - The cortical surface appears semi-transparent (ghosted)
 - Active regions pulse with red/yellow glow
 - Intensity follows the hemodynamic response function
 - Updates occur in real-time (30-60 FPS)
 
 ## Installation
+
+
+## Dataset
+
+Due to file size constraints, the primary dataset (**CSI1_GLMbetas-TYPED-FITHRF-GLMDENOISE-RR_ses-01.nii.gz**) can be downloaded here:
+[Download Dataset from Google Drive](https://drive.google.com/drive/folders/1H_CMnKsQs_tzx8dDCshSVyUeMO8Hf8rG?usp=sharing)
+
 
 ### Requirements
 
@@ -70,23 +78,24 @@ python -c "import nilearn; print('Nilearn OK')"
 ### Basic Usage
 
 ```bash
-python fmri_bold_simulation.py
+python Nifti_projection_fixed.py
 ```
 
 The script will:
+
 1. Download the fsaverage cortical mesh (~50MB, first run only)
 2. Initialize the BOLD signal simulator
 3. Open an interactive 3D window with the pulsating brain
 
 ### Interactive Controls
 
-| Action | Control |
-|--------|---------|
-| Rotate view | Left mouse button + drag |
-| Pan view | Middle mouse button + drag |
-| Zoom | Right mouse button + drag OR scroll wheel |
-| Reset camera | Press `r` |
-| Quit | Press `q` OR close window |
+| Action       | Control                                   |
+| ------------ | ----------------------------------------- |
+| Rotate view  | Left mouse button + drag                  |
+| Pan view     | Middle mouse button + drag                |
+| Zoom         | Right mouse button + drag OR scroll wheel |
+| Reset camera | Press `r`                               |
+| Quit         | Press `q` OR close window               |
 
 ### Customization
 
@@ -163,6 +172,7 @@ The code achieves real-time performance through:
 5. **Fixed Color Range**: Prevents re-computation of color mapping bounds
 
 **Expected Performance**:
+
 - CPU: Intel i5/AMD Ryzen 5 or better
 - GPU: Integrated graphics → 30 FPS, Dedicated GPU → 60+ FPS
 - RAM: ~2GB used (mesh + textures)
@@ -252,12 +262,14 @@ plotter.add_mesh(mesh, cmap=custom_cmap, ...)
 ### Common Issues
 
 **Issue**: "Cannot download fsaverage dataset"
+
 ```bash
 # Solution: Manually download to cache
 python -c "from nilearn import datasets; datasets.fetch_surf_fsaverage()"
 ```
 
 **Issue**: Low FPS (<20)
+
 ```bash
 # Solutions:
 # 1. Reduce depth peeling layers
@@ -271,6 +283,7 @@ plotter.add_mesh(mesh, smooth_shading=False, ...)
 ```
 
 **Issue**: "OpenGL version too low"
+
 ```bash
 # Check OpenGL version
 python -c "import pyvista as pv; pv.Report()"
@@ -280,6 +293,7 @@ export MESA_GL_VERSION_OVERRIDE=3.3  # Linux
 ```
 
 **Issue**: "Segmentation fault on macOS"
+
 ```bash
 # Use XQuartz or conda-installed VTK
 conda install -c conda-forge vtk pyvista
@@ -344,9 +358,7 @@ If you use this code in academic work, please cite:
 ## References
 
 1. Huettel, S. A., Song, A. W., & McCarthy, G. (2014). *Functional Magnetic Resonance Imaging* (3rd ed.). Sinauer Associates.
-
 2. Poldrack, R. A., Mumford, J. A., & Nichols, T. E. (2011). *Handbook of Functional MRI Data Analysis*. Cambridge University Press.
-
 3. Lindquist, M. A., et al. (2009). Modeling the hemodynamic response function in fMRI: Efficiency, bias and mis-modeling. *NeuroImage*, 45(1), S187-S198.
 
 ## License
