@@ -1,0 +1,18 @@
+# Core visualization and rendering
+pyvista>=0.43.0
+vtk>=9.2.0
+
+# Neuroimaging data handling
+nilearn>=0.10.0
+
+# Numerical computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Utilities
+matplotlib>=3.7.0
+
+# Optional: for enhanced features
+# pillow>=10.0.0  # Screenshot export
+# imageio>=2.31.0  # Video export with more formats
+# tqdm>=4.65.0  # Progress bars for data loading
