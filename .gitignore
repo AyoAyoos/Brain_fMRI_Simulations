@@ -1,0 +1,78 @@
+# ----------------------------
+# Python / virtualenv / caches
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ----------------------------
+# Large data + generated assets
+# ----------------------------
+
+# Datasets / stimuli
+Original_Images/
+
+# BOLD5000 ROI betas (unzipped + zip)
+BOLD5000_GLMsingle_ROI_betas/
+BOLD5000_GLMsingle_ROI_betas.zip
+
+# Other raw subject/session resources (often large)
+CSI1/
+
+# Large zip archives
+*.zip
+*.7z
+*.rar
+
+# Numpy arrays / model artifacts / heavy outputs
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.joblib
+
+# Generated images
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.tiff
+
+# By default, ignore the entire output folder (it can be huge)
+output/
+
+# ...but keep small split CSVs (useful to version-control)
+!output/
+output/**/*
+!output/splits/
+!output/splits/*.csv
+
+# Optional: keep a placeholder so empty folders stay tracked
+!output/splits/.gitkeep
+
