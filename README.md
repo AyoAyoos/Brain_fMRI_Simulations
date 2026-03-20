@@ -1,381 +1,220 @@
-# Real-Time 3D fMRI BOLD Signal Simulation
-
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
-
-A high-performance, GPU-accelerated visualization system for simulating Blood-Oxygen-Level-Dependent (BOLD) signals in functional MRI using Python, PyVista, and Nilearn.
-
-## Features
-
-- 🧠 **Anatomically Accurate**: Uses standard `fsaverage` cortical surface meshes
-- 🎨 **Glass Brain Rendering**: Multi-layer transparency with depth peeling
-- ⚡ **GPU-Accelerated**: Real-time updates at 60+ FPS on modern hardware
-- 🔬 **Neuroscience-Based**: Simulates hemodynamic response function (HRF)
-- 🎮 **Interactive**: Fully rotatable, zoomable 3D visualization
-- 📊 **Customizable**: Adjustable ROI locations, activation patterns, and visual parameters
-
-## Demo
-
-The simulation creates a "Glass Brain" where:
-
-- The cortical surface appears semi-transparent (ghosted)
-- Active regions pulse with red/yellow glow
-- Intensity follows the hemodynamic response function
-- Updates occur in real-time (30-60 FPS)
-
-## Installation
-
-
-## Dataset
-
-Due to file size constraints, the primary dataset (**CSI1_GLMbetas-TYPED-FITHRF-GLMDENOISE-RR_ses-01.nii.gz**) can be downloaded here:
-[Download Dataset from Google Drive](https://drive.google.com/drive/folders/1H_CMnKsQs_tzx8dDCshSVyUeMO8Hf8rG?usp=sharing)
-
-
-### Requirements
-
-- Python 3.8 or higher
-- GPU with OpenGL 3.3+ support (recommended)
-- 4GB+ RAM
-
-### Quick Install
-
-```bash
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install required packages
-pip install numpy scipy pyvista nilearn matplotlib
-```
-
-### Detailed Dependencies
-
-```bash
-# Core visualization
-pip install pyvista>=0.43.0
-
-# Neuroimaging data
-pip install nilearn>=0.10.0
-
-# Numerical computing
-pip install numpy>=1.24.0 scipy>=1.10.0
-
-# Optional: for advanced features
-pip install vtk>=9.2.0  # VTK backend (usually installed with PyVista)
-pip install matplotlib>=3.7.0  # For color maps
-```
-
-### Verify Installation
-
-```bash
-python -c "import pyvista as pv; print(f'PyVista {pv.__version__}')"
-python -c "import nilearn; print('Nilearn OK')"
-```
-
-## Usage
-
-### Basic Usage
-
-```bash
-python Nifti_projection_fixed.py
-```
-
-The script will:
-
-1. Download the fsaverage cortical mesh (~50MB, first run only)
-2. Initialize the BOLD signal simulator
-3. Open an interactive 3D window with the pulsating brain
-
-### Interactive Controls
-
-| Action       | Control                                   |
-| ------------ | ----------------------------------------- |
-| Rotate view  | Left mouse button + drag                  |
-| Pan view     | Middle mouse button + drag                |
-| Zoom         | Right mouse button + drag OR scroll wheel |
-| Reset camera | Press `r`                               |
-| Quit         | Press `q` OR close window               |
-
-### Customization
-
-Modify these parameters in the `main()` function:
-
-```python
-# Change ROI location (motor cortex, visual cortex, etc.)
-roi_center_vertex = 5000  # Try: 8000 (occipital), 3000 (frontal)
-
-# Adjust activation radius (in millimeters)
-roi_radius = 20.0  # Larger = broader activation
-
-# Change pulsation speed
-activation_frequency = 0.3  # Hz (0.1-1.0 typical)
-
-# Modify color scheme
-cmap = 'hot'  # Options: 'jet', 'plasma', 'viridis', 'inferno'
-```
-
-## Technical Details
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    User Application                          │
-├─────────────────────────────────────────────────────────────┤
-│  BoldSignalSimulator                                         │
-│  ├─ Gaussian ROI Weighting                                   │
-│  ├─ HRF Temporal Modulation                                  │
-│  └─ Vectorized NumPy Updates                                 │
-├─────────────────────────────────────────────────────────────┤
-│  PyVista Rendering Pipeline                                  │
-│  ├─ Depth Peeling (Transparency)                             │
-│  ├─ Scalar Opacity Mapping                                   │
-│  └─ In-place GPU Memory Updates                              │
-├─────────────────────────────────────────────────────────────┤
-│  VTK Backend                                                 │
-│  └─ OpenGL Hardware Acceleration                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### BOLD Signal Model
-
-The simulation implements a simplified hemodynamic response:
-
-```
-BOLD(t, v) = baseline + HRF(t) × Gaussian(distance(v, ROI_center))
-
-where:
-  - HRF(t) = 0.5 + 0.5 × sin(2πft)  [simplified sinusoidal model]
-  - Gaussian(d) = exp(-0.5 × (d/σ)²)
-  - baseline = 0.1 (resting-state activity)
-```
-
-**Note**: For research applications, replace the sinusoidal HRF with the canonical gamma function:
-
-```python
-def canonical_hrf(t, peak_time=5, undershoot_time=15):
-    """Gamma function-based HRF"""
-    h1 = (t ** (peak_time - 1)) * np.exp(-t)
-    h2 = (t ** (undershoot_time - 1)) * np.exp(-t) / 6
-    return h1 - h2
-```
-
-### Performance Optimization
-
-The code achieves real-time performance through:
-
-1. **Pre-computed Weights**: Gaussian activation pattern calculated once
-2. **Vectorized Operations**: NumPy array operations (no Python loops)
-3. **In-place Updates**: Direct GPU memory modification via `mesh['activation'] = ...`
-4. **Depth Peeling**: Hardware-accelerated transparency (8 peeling layers)
-5. **Fixed Color Range**: Prevents re-computation of color mapping bounds
-
-**Expected Performance**:
-
-- CPU: Intel i5/AMD Ryzen 5 or better
-- GPU: Integrated graphics → 30 FPS, Dedicated GPU → 60+ FPS
-- RAM: ~2GB used (mesh + textures)
-
-### File Structure
-
-```
-fmri_bold_simulation.py
-├─ BoldSignalSimulator      # Core simulation engine
-│  ├─ __init__()            # Initialize with mesh and ROI parameters
-│  ├─ _compute_activation_weights()  # Pre-compute Gaussian kernel
-│  ├─ simulate_hrf()        # Hemodynamic response function
-│  └─ update()              # Frame update logic
-│
-├─ load_cortical_mesh()     # Nilearn data loader
-├─ create_glass_brain_plotter()  # PyVista renderer setup
-└─ main()                   # Application entry point
-```
-
-## Advanced Usage
-
-### Multiple ROIs
-
-Simulate simultaneous activation in different brain regions:
-
-```python
-# Create multiple simulators
-motor_roi = BoldSignalSimulator(mesh, roi_center_vertex=5000, roi_radius=15)
-visual_roi = BoldSignalSimulator(mesh, roi_center_vertex=8000, roi_radius=20)
-
-# In update callback:
-motor_signal = motor_roi.update(dt)
-visual_signal = visual_roi.update(dt)
-combined_signal = np.maximum(motor_signal, visual_signal)  # Combine activations
-mesh['activation'] = combined_signal
-```
-
-### Task-Based Paradigm
-
-Implement a block-design fMRI experiment:
-
-```python
-def task_paradigm(t, block_duration=10, rest_duration=5):
-    """Alternating task/rest blocks"""
-    cycle_time = block_duration + rest_duration
-    phase = t % cycle_time
-    return 1.0 if phase < block_duration else 0.0
-
-# In simulate_hrf:
-task_state = task_paradigm(t)
-amplitude = task_state * (0.5 + 0.5 * np.sin(2 * np.pi * self.frequency * t))
-```
-
-### Export Animation
-
-Record the visualization as a video:
-
-```python
-# In main(), before plotter.show():
-plotter.open_movie('bold_simulation.mp4', framerate=30)
-
-# In callback function:
-plotter.write_frame()
-
-# After plotter.show():
-plotter.close()
-```
-
-### Custom Color Maps
-
-Use scientific color maps optimized for perceptual uniformity:
-
-```python
-from matplotlib import cm
-from matplotlib.colors import ListedColormap
-
-# Create custom colormap
-colors = cm.get_cmap('viridis', 256)(np.linspace(0, 1, 256))
-colors[:10, 3] = 0  # Make lowest values fully transparent
-custom_cmap = ListedColormap(colors)
-
-plotter.add_mesh(mesh, cmap=custom_cmap, ...)
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: "Cannot download fsaverage dataset"
-
-```bash
-# Solution: Manually download to cache
-python -c "from nilearn import datasets; datasets.fetch_surf_fsaverage()"
-```
-
-**Issue**: Low FPS (<20)
-
-```bash
-# Solutions:
-# 1. Reduce depth peeling layers
-plotter.enable_depth_peeling(number_of_peels=4)
-
-# 2. Lower window resolution
-plotter = pv.Plotter(window_size=[1280, 720])
-
-# 3. Disable smooth shading
-plotter.add_mesh(mesh, smooth_shading=False, ...)
-```
-
-**Issue**: "OpenGL version too low"
-
-```bash
-# Check OpenGL version
-python -c "import pyvista as pv; pv.Report()"
-
-# Update graphics drivers or use software rendering
-export MESA_GL_VERSION_OVERRIDE=3.3  # Linux
-```
-
-**Issue**: "Segmentation fault on macOS"
-
-```bash
-# Use XQuartz or conda-installed VTK
-conda install -c conda-forge vtk pyvista
-```
-
-## Scientific Background
-
-### Neurovascular Coupling
-
-The BOLD signal reflects the coupling between neural activity and blood flow:
-
-1. **Neural Activation**: Neurons fire in response to stimuli
-2. **Metabolic Demand**: Active neurons consume oxygen
-3. **Vascular Response**: Blood flow increases (overcompensation)
-4. **BOLD Contrast**: Ratio of oxygenated/deoxygenated hemoglobin changes
-5. **MRI Signal**: T2* contrast detects this magnetic susceptibility change
-
-### Hemodynamic Response Function (HRF)
-
-The HRF describes the temporal relationship between neural activity and BOLD signal:
-
-- **Onset**: ~1-2 seconds after stimulus
-- **Peak**: ~5-6 seconds
-- **Undershoot**: ~10-15 seconds (post-peak dip)
-- **Return to Baseline**: ~20-30 seconds
-
-This temporal delay is why fMRI has poor temporal resolution (~2s) despite excellent spatial resolution (~2-3mm).
-
-## Applications
-
-- **Education**: Teaching fMRI principles and neurovascular coupling
-- **Methods Development**: Testing new analysis pipelines
-- **Protocol Design**: Planning fMRI experiments and ROI selection
-- **Visualization**: Creating figures and animations for publications
-- **Demos**: Science outreach and public engagement
-
-## Contributing
-
-Contributions welcome! Areas for enhancement:
-
-- [ ] Implement canonical HRF (double-gamma function)
-- [ ] Add connectivity patterns between regions
-- [ ] Support bilateral hemisphere rendering
-- [ ] Integrate with real fMRI data (NIfTI files)
-- [ ] Add GUI controls for parameter adjustment
-- [ ] Implement event-related designs
-- [ ] Support volumetric rendering (not just surface)
-
-## Citation
-
-If you use this code in academic work, please cite:
-
-```bibtex
-@software{fmri_bold_simulation,
-  author = {Claude (Anthropic)},
-  title = {Real-Time 3D fMRI BOLD Signal Simulation},
-  year = {2026},
-  url = {https://github.com/yourusername/fmri-bold-simulation}
-}
-```
-
-## References
-
-1. Huettel, S. A., Song, A. W., & McCarthy, G. (2014). *Functional Magnetic Resonance Imaging* (3rd ed.). Sinauer Associates.
-2. Poldrack, R. A., Mumford, J. A., & Nichols, T. E. (2011). *Handbook of Functional MRI Data Analysis*. Cambridge University Press.
-3. Lindquist, M. A., et al. (2009). Modeling the hemodynamic response function in fMRI: Efficiency, bias and mis-modeling. *NeuroImage*, 45(1), S187-S198.
-
-## License
-
-MIT License - See LICENSE file for details
-
-## Acknowledgments
-
-- **Nilearn**: For providing standardized neuroimaging datasets
-- **PyVista**: For the excellent VTK Python interface
-- **VTK**: For robust 3D rendering capabilities
-- **fsaverage**: FreeSurfer average brain template (Fischl et al., 1999)
-
-## Contact
-
-For questions or feedback, please open an issue on GitHub or reach out to the maintainers.
+# Brain fMRI Simulations (BOLD5000) — Data Prep + Brain→Image Baseline
+
+This repository contains a **step-by-step pipeline** to:
+
+- build **train/test splits** from BOLD5000 stimulus images (ImageNet vs COCO vs SUN/Scene)
+- merge **BOLD5000 ROI fMRI betas** for a subject (currently `CSI1`)
+- extract **CLIP image embeddings** for the same images
+- **align** (average repeated trials) brain data to the split lists
+- train a simple **brain → CLIP** translator (Ridge regression)
+- optionally generate images by injecting predicted embeddings into **Stable Diffusion 1.5**
+- compute **pixel metrics** (MSE / SSIM) between real and reconstructed images
+
+> Important: the scripts currently use **absolute Windows paths** (e.g. `D:/PBL_6/DATA_prep/...`).  
+> If your folder is in a different location, edit the configuration blocks at the top of each script.
 
 ---
 
-**Disclaimer**: This is a simplified simulation for educational and visualization purposes. It does not replace proper fMRI analysis software (FSL, SPM, AFNI, etc.) for research applications.
+## Folder structure (expected)
+
+At a high level, your workspace is expected to look like:
+
+```
+DATA_prep/
+  scripts/
+    01_data_splitter.py
+    02_brain_feature_merger.py
+    03_clip_feature_extractor.py
+    04_data_aligner.py
+    05_train_translator.py
+    06_generate_images.py
+    07_pixel_metrics.py
+
+  Original_Images/
+    ImageNet/
+    COCO/
+    Scene/   (or SUN/)
+
+  CSI1/
+    CSI1_sess01/
+      run01.txt ...
+    ...
+
+  BOLD5000_GLMsingle_ROI_betas/
+    BOLD5000_GLMsingle_ROI_betas/
+      py/
+        CSI1_GLMbetas-TYPED-FITHRF-GLMDENOISE-RR_allses_LHEarlyVis.npy
+        ...
+
+  output/
+    splits/
+    brain_features/
+    clip_features/
+    aligned_brain/
+    models/
+    reconstructions/
+```
+
+---
+
+## Setup
+
+### 1) Create and activate a virtual environment (recommended)
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+### 2) Install dependencies
+
+You can install packages as-needed while running the steps. Typical requirements include:
+
+- `numpy`, `pandas`, `scikit-learn`, `scipy`
+- `Pillow`
+- `torch`
+- `transformers`
+- `diffusers`
+- `scikit-image`
+
+Example:
+
+```bash
+pip install numpy pandas scikit-learn scipy pillow torch transformers diffusers scikit-image joblib
+```
+
+---
+
+## Pipeline (run order)
+
+### Step 1 — Create splits (ImageNet objects vs COCO scenes + training mix)
+
+Script: `scripts/01_data_splitter.py`
+
+- Reads images from:
+  - `Original_Images/ImageNet/`
+  - `Original_Images/COCO/`
+  - `Original_Images/Scene/` (falls back to `SUN/` if not found)
+- Writes CSVs to `output/splits/`:
+  - `train_mixed.csv`
+  - `test_objects_imagenet.csv` (100 random objects)
+  - `test_scenes_coco.csv` (100 random scenes)
+
+Run:
+
+```bash
+python scripts/01_data_splitter.py
+```
+
+### Step 2 — Merge ROI betas for a subject into one matrix
+
+Script: `scripts/02_brain_feature_merger.py`
+
+- Loads multiple ROI `.npy` beta matrices for `CSI1`
+- Horizontally concatenates them into one matrix of shape:
+  - `(num_trials, num_voxels_total)`
+- Saves:
+  - `output/brain_features/CSI1_merged_brain.npy`
+
+Run:
+
+```bash
+python scripts/02_brain_feature_merger.py
+```
+
+### Step 3 — Extract CLIP embeddings for each split
+
+Script: `scripts/03_clip_feature_extractor.py`
+
+- Uses `openai/clip-vit-large-patch14`
+- For each CSV in `output/splits/`, generates an embedding matrix and saves it to:
+  - `output/clip_features/*_clip_embeds.npy`
+
+Run:
+
+```bash
+python scripts/03_clip_feature_extractor.py
+```
+
+### Step 4 — Align brain trials to image filenames (and average repeats)
+
+Script: `scripts/04_data_aligner.py`
+
+- Parses BOLD5000 presentation lists in `CSI1/CSI1_sessXX/runYY.txt`
+- Maps image filename → trial indices in the merged brain matrix
+- For each split, averages repeated trials, producing:
+  - `output/aligned_brain/train_mixed_brain.npy`
+  - `output/aligned_brain/test_objects_imagenet_brain.npy`
+  - `output/aligned_brain/test_scenes_coco_brain.npy`
+
+Run:
+
+```bash
+python scripts/04_data_aligner.py
+```
+
+### Step 5 — Train brain→CLIP translator (Ridge regression baseline)
+
+Script: `scripts/05_train_translator.py`
+
+- Trains a `StandardScaler + RidgeCV` model to predict CLIP vectors from brain features
+- Saves:
+  - `output/models/csi1_brain_translator.pkl`
+  - predictions for the two test sets:
+    - `output/models/pred_objects.npy`
+    - `output/models/pred_scenes.npy`
+
+Run:
+
+```bash
+python scripts/05_train_translator.py
+```
+
+### Step 6 (optional) — Generate images from predicted embeddings (Stable Diffusion 1.5)
+
+Script: `scripts/06_generate_images.py`
+
+- Loads `pred_objects.npy` or `pred_scenes.npy`
+- Injects the predicted embeddings as `prompt_embeds` into SD 1.5 (`runwayml/stable-diffusion-v1-5`)
+- Saves PNG reconstructions under `output/reconstructions/.../recon_XXX.png`
+
+Run:
+
+```bash
+python scripts/06_generate_images.py
+```
+
+Notes:
+- This step is compute-heavy and may require a GPU.
+- If embedding dimensions don’t match the SD text encoder, the script creates a projection layer.
+
+### Step 7 (optional) — Pixel-level metrics (MSE / SSIM)
+
+Script: `scripts/07_pixel_metrics.py`
+
+- Compares reconstructed images with the ground-truth images (resized to 512×512)
+- Uses `test_scenes_coco.csv` (configured in the script) to map index → filename/folder
+- Prints:
+  - Average MSE
+  - Average SSIM
+
+Run:
+
+```bash
+python scripts/07_pixel_metrics.py
+```
+
+---
+
+## Repro tips
+
+- **Paths**: Update the configuration section at the top of each script to match your local folder.
+- **Keep GitHub light**: Don’t push datasets (`Original_Images/`, ROI `.npy`), `output/` artifacts, or `venv/`.
+- **Share data via links**: Put download links for BOLD5000/ROI files in this README instead of committing them.
+
+---
+
+## License
+
+Add a license if you plan to share publicly (MIT is common for code).
+
