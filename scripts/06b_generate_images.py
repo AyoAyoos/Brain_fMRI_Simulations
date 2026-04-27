@@ -70,9 +70,9 @@ SD_MODEL_ID = "runwayml/stable-diffusion-v1-5"
 # ── Generation settings ──────────────────────────────────────
 NUM_IMAGES        = 20     # how many to generate (max = len of predictions)
 NUM_STEPS         = 30     # diffusion steps — 30 is a good speed/quality balance
-GUIDANCE_SCALE    = 7.5    # classifier-free guidance strength
+GUIDANCE_SCALE    = 9.0   # classifier-free guidance strength
 IMG2IMG_STRENGTH  = 0.65   # how much SD modifies the seed image (0=none, 1=full)
-IMAGE_SIZE        = 512    # output resolution
+IMAGE_SIZE        = 768   # output resolution
 # ─────────────────────────────────────────────────────────────
 
 
