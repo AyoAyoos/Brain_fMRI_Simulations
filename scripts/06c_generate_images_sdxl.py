@@ -117,8 +117,7 @@ class BrainToSDXLProjection(nn.Module):
         super().__init__()
         self.seq_len = seq_len
 
-        # Head 1: brain → sequence embeddings (per token)
-        # 1024 → 1024 → 2048
+        
         self.seq_head = nn.Sequential(
             nn.Linear(in_dim, 1024),
             nn.GELU(),
@@ -391,7 +390,8 @@ def main():
         torch_dtype=dtype,
         use_safetensors=True,
         variant="fp16" if dtype == torch.float16 else None,
-    ).to(device)
+    )
+    #.to(device)
     pipe.set_progress_bar_config(disable=True)
 
     # Memory optimisation — important for 8GB GPUs
@@ -440,7 +440,7 @@ def main():
             pred_embeds=pred_embeds, ref_embeds=ref_embeds,
             split_csv=split_csv, save_dir=dir_b,
             device=device, dtype=dtype, n=n,
-        )
+        ).to(device).to(dtype)
 
         del img2img_pipe
         gc.collect()
