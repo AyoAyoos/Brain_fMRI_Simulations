@@ -261,6 +261,7 @@ Notes:
 - **Paths**: Update the configuration section at the top of each script to match your local folder.
 - **Keep GitHub light**: Don’t push datasets (`Original_Images/`, ROI `.npy`), `output/` artifacts, or `venv/`.
 - **Share data via links**: Put download links for BOLD5000/ROI files in this README instead of committing them.
+- **Script variants**: Treat `*_copy.py` / `*_new_*.py` files as experiment branches and rename stable versions before release.
 
 ---
 
