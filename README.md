@@ -6,8 +6,8 @@ This repository contains a **step-by-step pipeline** to:
 - merge **BOLD5000 ROI fMRI betas** for a subject (currently `CSI1`)
 - extract **CLIP image embeddings** for the same images
 - **align** (average repeated trials) brain data to the split lists
-- train a simple **brain → CLIP** translator (Ridge regression)
-- optionally generate images by injecting predicted embeddings into **Stable Diffusion 1.5**
+- train a **brain → CLIP** translator (Ridge baseline or MLP variant)
+- optionally generate images with **Stable Diffusion 1.5** or **Stable Diffusion XL (SDXL)**
 - compute **pixel metrics** (MSE / SSIM) between real and reconstructed images
 
 > Important: the scripts currently use **absolute Windows paths** (e.g. `D:/PBL_6/DATA_prep/...`).  
@@ -27,7 +27,10 @@ DATA_prep/
     03_clip_feature_extractor.py
     04_data_aligner.py
     05_train_translator.py
+    05b_train_mlp_translator.py
     06_generate_images.py
+    06b_generate_images.py
+    06c_generate_images_sdxl.py
     07_pixel_metrics.py
 
   Original_Images/
@@ -153,7 +156,7 @@ Run:
 python scripts/04_data_aligner.py
 ```
 
-### Step 5 — Train brain→CLIP translator (Ridge regression baseline)
+### Step 5A — Train brain→CLIP translator (Ridge regression baseline)
 
 Script: `scripts/05_train_translator.py`
 
@@ -170,13 +173,34 @@ Run:
 python scripts/05_train_translator.py
 ```
 
-### Step 6 (optional) — Generate images from predicted embeddings (Stable Diffusion 1.5)
+### Step 5B — Train brain→CLIP translator (MLP + contrastive loss)
 
-Script: `scripts/06_generate_images.py`
+Script: `scripts/05b_train_mlp_translator.py`
 
-- Loads `pred_objects.npy` or `pred_scenes.npy`
-- Injects the predicted embeddings as `prompt_embeds` into SD 1.5 (`runwayml/stable-diffusion-v1-5`)
-- Saves PNG reconstructions under `output/reconstructions/.../recon_XXX.png`
+- Trains a nonlinear `BrainEncoder` MLP with:
+  - MSE loss
+  - contrastive loss term
+- Saves:
+  - `output/models/csi1_mlp_encoder.pt`
+  - `output/models/csi1_mlp_scaler.pkl`
+  - prediction files:
+    - `output/models/pred_objects_mlp.npy`
+    - `output/models/pred_scenes_mlp.npy`
+
+Run:
+
+```bash
+python scripts/05b_train_mlp_translator.py
+```
+
+### Step 6A (optional) — Generate images (Stable Diffusion 1.5)
+
+Script: `scripts/06_generate_images.py` (or `scripts/06b_generate_images.py`)
+
+- Loads prediction files from Step 5 (Ridge or MLP outputs)
+- Injects projected embeddings as `prompt_embeds` into SD 1.5 (`runwayml/stable-diffusion-v1-5`)
+- Supports direct generation and retrieval+img2img style reconstructions
+- Saves PNG reconstructions under `output/reconstructions/<run_label>/...`
 
 Run:
 
@@ -186,13 +210,35 @@ python scripts/06_generate_images.py
 
 Notes:
 - This step is compute-heavy and may require a GPU.
-- If embedding dimensions don’t match the SD text encoder, the script creates a projection layer.
+- Generated file names can include strategy prefixes such as `recon_direct_XXX.png` or `recon_retrieval_XXX.png`.
+
+### Step 6B (optional) — Generate images with SDXL (recommended quality)
+
+Script: `scripts/06c_generate_images_sdxl.py`
+
+- Uses SDXL base model: `stabilityai/stable-diffusion-xl-base-1.0`
+- Projects brain predictions to SDXL conditioning:
+  - sequence embeddings: `(1, 77, 2048)`
+  - pooled embeddings: `(1, 1280)`
+- Produces 1024x1024 images and supports:
+  - Strategy A: direct SDXL generation
+  - Strategy B: nearest-neighbor retrieval + SDXL img2img
+
+Run:
+
+```bash
+python scripts/06c_generate_images_sdxl.py
+```
+
+Notes:
+- First SDXL run downloads a large model (~6.5GB).
+- For CUDA, fp16 and CPU offload are used in-script for lower VRAM usage.
 
 ### Step 7 (optional) — Pixel-level metrics (MSE / SSIM)
 
 Script: `scripts/07_pixel_metrics.py`
 
-- Compares reconstructed images with the ground-truth images (resized to 512×512)
+- Compares reconstructed images with the ground-truth images
 - Uses `test_scenes_coco.csv` (configured in the script) to map index → filename/folder
 - Prints:
   - Average MSE
@@ -203,6 +249,10 @@ Run:
 ```bash
 python scripts/07_pixel_metrics.py
 ```
+
+Notes:
+- Set `RECON_DIR` / folder selection to the specific reconstruction output you want to score.
+- If evaluating SDXL outputs, use 1024x1024 resizing for fair comparison.
 
 ---
 
