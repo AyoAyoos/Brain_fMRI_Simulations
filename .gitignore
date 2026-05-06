@@ -76,3 +76,4 @@ output/**/*
 # Optional: keep a placeholder so empty folders stay tracked
 !output/splits/.gitkeep
 
+CSI1_GLMbetas-TYPED-FITHRF-GLMDENOISE-RR_ses-01.nii.gz
