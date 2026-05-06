@@ -1,11 +1,11 @@
 """
-05b_train_mlp_v2.py
-===================
-PHASE 4: Voxel-Attention MLP Translator (FIXED)
-Introduces self-attention to filter noisy fMRI voxels and uses an aggressive 
-two-stage schedule to break the 1.04 loss plateau.
+05b_train_transformer_v5.py
+===========================
+PHASE 5: ROI-Aware Brain Transformer (FIXED)
+Treats the 10 merged ROIs as a sequence of tokens. 
+Uses a Transformer Encoder to capture cross-region dynamics.
 
-FIXED: Resolved tensor size mismatch in VoxelAttention layer.
+FIXED: Resolved mat1/mat2 shape mismatch by aligning padding and chunk_size.
 """
 
 import os
@@ -17,109 +17,104 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from scipy.stats import pearsonr
 import joblib
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION & OUTPUT NAMING
+# CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
 BRAIN_DIR  = r"D:/PBL_6/DATA_prep/output/aligned_brain"
 CLIP_DIR   = r"D:/PBL_6/DATA_prep/output/clip_features"
 MODELS_DIR = r"D:/PBL_6/DATA_prep/output/models"
 
-FILE_PREFIX = "mlp_v4_attention" # New prefix for the Attention experiment
+FILE_PREFIX = "mlp_v5_transformer"
+
+# ROI Architecture
+# [LHEarlyVis, RHEarlyVis, LHLOC, RHLOC, LHPPA, RHPPA, LHOPA, RHOPA, LHRSC, RHRSC]
+NUM_ROIS = 10  
 
 # Hyperparameters
 BATCH_SIZE    = 32
-LEARNING_RATE = 2e-4    
-EPOCHS        = 120     
-HIDDEN_DIM    = 1024    
+LEARNING_RATE = 1e-4    
+EPOCHS        = 100     
+HIDDEN_DIM    = 512    
 CLIP_DIM      = 1024   
-DROPOUT       = 0.4    
-WEIGHT_DECAY  = 0.05   
-TEMPERATURE   = 0.04   
-PATIENCE      = 30     
-VOXEL_JITTER  = 0.03   
-CONTRASTIVE_WT = 3.0   
+DROPOUT       = 0.3    
+TEMPERATURE   = 0.05   
+CONTRASTIVE_MAX_WT = 2.0 
 
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MODEL COMPONENTS (Attention + Residual)
+# MODEL: Brain-Transformer
 # ─────────────────────────────────────────────────────────────────────────────
-class VoxelAttention(nn.Module):
-    """
-    Learns which voxels are actually 'useful' for visual decoding.
-    Acts as a learned filter for noisy fMRI signals.
-    """
-    def __init__(self, input_dim):
-        super().__init__()
-        # Squeeze-and-Excitation style bottleneck for feature weighting
-        self.attn_net = nn.Sequential(
-            nn.Linear(input_dim, input_dim // 4),
-            nn.GELU(),
-            nn.Linear(input_dim // 4, input_dim),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        # x shape: (batch, 1685)
-        # attn shape: (batch, 1685)
-        attn = self.attn_net(x)
-        return x * attn
-
-class ResidualBlock(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.block = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim),
-            nn.GELU(),
-            nn.Dropout(0.2), 
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim)
-        )
-
-    def forward(self, x):
-        return F.gelu(x + self.block(x))
-
-class ImprovedBrainEncoder(nn.Module):
+class BrainTransformer(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
-        self.attention = VoxelAttention(input_dim)
+        # 1. Calculate proper chunking with padding
+        # We find the smallest multiple of NUM_ROIS >= input_dim
+        self.padded_dim = int(np.ceil(input_dim / NUM_ROIS) * NUM_ROIS)
+        self.chunk_size = self.padded_dim // NUM_ROIS
         
-        self.input_proj = nn.Linear(input_dim, HIDDEN_DIM)
+        # 2. ROI Projection
+        self.roi_embed = nn.Linear(self.chunk_size, HIDDEN_DIM)
         
-        self.res_layers = nn.Sequential(
-            ResidualBlock(HIDDEN_DIM),
-            ResidualBlock(HIDDEN_DIM),
-            ResidualBlock(HIDDEN_DIM),
-            ResidualBlock(HIDDEN_DIM)
+        # 3. Positional Encoding
+        self.pos_embedding = nn.Parameter(torch.randn(1, NUM_ROIS, HIDDEN_DIM))
+        
+        # 4. Transformer Encoder
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=HIDDEN_DIM, 
+            nhead=8, 
+            dim_feedforward=HIDDEN_DIM * 2, 
+            dropout=DROPOUT,
+            activation='gelu',
+            batch_first=True
         )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=4)
         
-        self.output_proj = nn.Linear(HIDDEN_DIM, output_dim)
+        # 5. Output Heads
+        self.ln_final = nn.LayerNorm(HIDDEN_DIM)
+        self.out_proj = nn.Linear(HIDDEN_DIM, output_dim)
 
     def forward(self, x):
-        # Apply attention first to mask noise
-        x = self.attention(x)
-        x = self.input_proj(x)
-        x = self.res_layers(x)
-        x = self.output_proj(x)
+        batch_size = x.shape[0]
+        
+        # Correctly pad to the expected padded_dim (e.g., 1685 -> 1690)
+        pad_needed = self.padded_dim - x.shape[1]
+        if pad_needed > 0:
+            x = F.pad(x, (0, pad_needed))
+        
+        # Reshape into (batch, 10, chunk_size)
+        # This will now be exactly (batch, 10, 169)
+        tokens = x.view(batch_size, NUM_ROIS, self.chunk_size)
+        
+        # Project tokens to hidden space
+        x = self.roi_embed(tokens) # (batch, 10, HIDDEN_DIM)
+        x = x + self.pos_embedding
+        
+        # Process through Transformer
+        x = self.transformer(x)
+        
+        # Average pooling across ROI tokens
+        x = x.mean(dim=1)
+        x = self.ln_final(x)
+        x = self.out_proj(x)
+        
         return F.normalize(x, p=2, dim=-1)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOSS & TRAINING LOGIC
+# LOSS & TRAINING
 # ─────────────────────────────────────────────────────────────────────────────
-def contrastive_loss(pred, target, temp=0.04):
+def contrastive_loss(pred, target, temp=0.05):
     logits = torch.matmul(pred, target.T) / temp
     labels = torch.arange(pred.size(0)).to(pred.device)
     return (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"🚀 Phase 4: Training {FILE_PREFIX} on: {device}")
+    print(f"🚀 Phase 5: Training Brain-Transformer on: {device}")
 
-    # 1. Load Data
+    # Load Data
     X = np.load(os.path.join(BRAIN_DIR, "train_mixed_brain.npy"))
     Y = np.load(os.path.join(CLIP_DIR, "train_mixed_clip_embeds.npy"))
     
@@ -131,27 +126,21 @@ def main():
     train_loader = DataLoader(TensorDataset(torch.from_numpy(x_train).float(), torch.from_numpy(y_train).float()), batch_size=BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(TensorDataset(torch.from_numpy(x_val).float(), torch.from_numpy(y_val).float()), batch_size=BATCH_SIZE)
 
-    # 2. Model Setup
-    model = ImprovedBrainEncoder(X.shape[1], CLIP_DIM).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    model = BrainTransformer(X.shape[1], CLIP_DIM).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=0.01)
     
     best_loss = float('inf')
-    counter = 0
     history = []
     best_model_path = os.path.join(MODELS_DIR, f"{FILE_PREFIX}_best.pt")
 
-    # 3. Training Loop
     for epoch in range(1, EPOCHS + 1):
         model.train()
-        t_mse, t_cos, t_cont = 0, 0, 0
         
-        current_contrast_wt = 0.1 if epoch <= 10 else CONTRASTIVE_WT
+        # Smooth Contrastive Warmup
+        current_cont_wt = min(CONTRASTIVE_MAX_WT, (epoch / 20.0) * CONTRASTIVE_MAX_WT)
         
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
-            if VOXEL_JITTER > 0: x = x + torch.randn_like(x) * VOXEL_JITTER
-            
             optimizer.zero_grad()
             pred = model(x)
             
@@ -159,12 +148,9 @@ def main():
             l_cos  = 1 - torch.mean(F.cosine_similarity(pred, y))
             l_cont = contrastive_loss(pred, y, temp=TEMPERATURE)
             
-            loss = (5.0 * l_mse) + (2.0 * l_cos) + (current_contrast_wt * l_cont)
+            loss = (5.0 * l_mse) + (2.0 * l_cos) + (current_cont_wt * l_cont)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            
-            t_mse += l_mse.item(); t_cos += l_cos.item(); t_cont += l_cont.item()
 
         model.eval()
         v_loss = 0
@@ -172,29 +158,23 @@ def main():
             for x, y in val_loader:
                 x, y = x.to(device), y.to(device)
                 pred = model(x)
-                # Validation loss combines MSE and Cosine for stability
-                v_loss += (F.mse_loss(pred, y) + (1 - torch.mean(F.cosine_similarity(pred, y)))).item()
+                v_loss += (1 - torch.mean(F.cosine_similarity(pred, y))).item()
         
         avg_v_loss = v_loss / len(val_loader)
-        scheduler.step()
         history.append({"epoch": epoch, "val_loss": avg_v_loss})
         
         if epoch % 5 == 0 or epoch == 1:
-            print(f"Epoch {epoch:03d} | Train MSE: {t_mse/len(train_loader):.4f} | Val Loss: {avg_v_loss:.6f}")
+            print(f"Epoch {epoch:03d} | Cont_Wt: {current_cont_wt:.2f} | Val Loss: {avg_v_loss:.4f}")
 
         if avg_v_loss < best_loss:
             best_loss = avg_v_loss
             torch.save(model.state_dict(), best_model_path)
-            counter = 0
-        else:
-            counter += 1
-            if counter >= PATIENCE: break
 
-    # 4. Final Artifact Saving
+    # Save artifacts
     joblib.dump(scaler, os.path.join(MODELS_DIR, f"{FILE_PREFIX}_scaler.pkl"))
     pd.DataFrame(history).to_csv(os.path.join(MODELS_DIR, f"{FILE_PREFIX}_training_log.csv"), index=False)
-
-    # 5. Generate Predictions
+    
+    # Generate predictions
     model.load_state_dict(torch.load(best_model_path))
     model.eval()
     for test_name in ["test_objects_imagenet", "test_scenes_coco"]:
@@ -207,7 +187,7 @@ def main():
             print(f"✅ Generated predictions for {test_name}")
         except: pass
 
-    print(f"\nDone! Experiment {FILE_PREFIX} completed.")
+    print(f"\n✅ Phase 5 Transformer complete. File Prefix: {FILE_PREFIX}")
 
 if __name__ == "__main__":
     main()
